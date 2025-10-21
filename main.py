@@ -3,62 +3,74 @@ import telebot
 # Telegram bot tokenını buraya yaz:
 TOKEN = "8208171283:AAF2JIftZ0efYjS855uYWWRZxXlAGYqaUJ8"  # <-- tırnaklar içinde!
 
-bot = telebot.TeleBot(TOKEN)
-
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    bot.reply_to(message, "Merhaba! 🤖 Ben Meshurx botum. Nasıl yardımcı olabilirim?")
-
-@bot.message_handler(func=lambda message: True)
-def echo_all(message):
-    bot.reply_to(message, f"Aldım 👌: {message.text}")
-
-print("✅ Bot aktif!")
-
-bot.infinity_polling()
 import logging
-import time
-import telegram
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
-from telegram.error import TelegramError, NetworkError
+import asyncio
+import os
+import openai
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# --- BEYİN BAŞLANGICI ---
+# === YAPAY ZEKA BEYNİ ===
+openai.api_key = os.getenv("OPENAI_API_KEY")  # Render'da Environment'a ekle
+
+# === OTOMATİK HATA YÖNETİMİ ===
 class AutoFixBrain:
     def __init__(self):
         self.error_log = []
 
-    def log_error(self, error):
-        print(f"[⚠️ HATA ALGILANDI] {error}")
+    async def handle_error(self, error):
         self.error_log.append(str(error))
-
-    def fix_error(self, error):
-        if "NetworkError" in str(error):
-            print("[🔁] Ağ hatası algılandı → yeniden bağlanılıyor...")
-            time.sleep(3)
-            return "retry"
+        print(f"[⚠️ HATA ALGILANDI] {error}")
+        if "Timed out" in str(error):
+            print("[⏱️] Zaman aşımı → yeniden bağlanılıyor...")
         elif "Unauthorized" in str(error):
-            print("[🔐] Token geçersiz → lütfen yeni token girin.")
-            return "alert"
-        elif "Timed out" in str(error):
-            print("[⏱️] Zaman aşımı → tekrar deneniyor...")
-            return "retry"
+            print("[🔐] Token hatası → lütfen yeni token girin.")
+        elif "NetworkError" in str(error):
+            print("[🌐] Ağ hatası → tekrar bağlanılıyor...")
         else:
-            print("[🤖] Tanımsız hata → kayıt altına alındı.")
-            return "log"
-# --- BEYİN SONU ---
+            print("[🤖] Tanımsız hata kaydedildi.")
 
-# Telegram BOT AYARLARI
-TOKEN = "8208171283:AAF2JIftZ0efYjS855uYWWRZxXlAGYqaUJ8"
 bot_brain = AutoFixBrain()
 
-def start(update, context):
-    update.message.reply_text("🧠 Akıllı sistem aktif! Hoş geldin kral 👑")
+# === TELEGRAM TOKENİNİ BURAYA YAZ ===
+TOKEN = "BURAYA_TELEGRAM_TOKENİNİ_YAZ"
 
-def handle_message(update, context):
-    text = update.message.text.lower()
-    update.message.reply_text(f"🤖 Cevap: {text.capitalize()} (AI sistemi aktif)")
+# === KOMUTLAR ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🧠 Meshurx beyin aktif! Ne konuşmak istersin?")
 
-def error_handler(update, context):
-    error = context.error
-    bot_brain.log_error(error)
-    action = bot_brain.fix
+# === MESAJI ALIP OPENAI'YE GÖNDERME ===
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    user_id = update.message.from_user.first_name
+    print(f"[📩] {user_id}: {user_text}")
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "Sen Meshurx adlı yardımcı bir yapay zekasın. Kibar, yaratıcı ve hızlısın."},
+                {"role": "user", "content": user_text}
+            ]
+        )
+        reply = response.choices[0].message["content"]
+        await update.message.reply_text(reply)
+    except Exception as e:
+        await bot_brain.handle_error(e)
+        await update.message.reply_text("⚠️ Şu anda yanıt veremiyorum, birazdan tekrar dene.")
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    await bot_brain.handle_error(context.error)
+
+# === ANA FONKSİYON ===
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(error_handler)
+
+    print("🚀 Meshurx AI Bot + Beyin yüklendi.")
+    await app.run_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
